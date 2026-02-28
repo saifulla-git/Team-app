@@ -197,9 +197,4 @@ elif menu == "Settings":
         st.session_state['language'] = new_lang
         st.success(f"Language set to {new_lang}.")
         st.rerun()
-```
 
----
-
-## Folder structure jo honi chahiye
-```
