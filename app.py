@@ -203,8 +203,3 @@ elif menu == "Settings":
 
 ## Folder structure jo honi chahiye
 ```
-your_project/
-│
-├── app.py                  ← ye wala code
-└── .streamlit/
-    └── secrets.toml        ← TOML file jo pehle di thi
