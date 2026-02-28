@@ -13,18 +13,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. GOOGLE SHEET CONNECTION ---
+# --- 2. GOOGLE SHEET CONNECTION (TOML based) ---
 @st.cache_resource
 def connect_to_sheet():
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_name("key.json", scope)
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
-        # APNI SHEET KA NAAM YAHAN LIKHEIN
-        sheet = client.open("Team_App_Data") 
+        sheet = client.open("Team_App_Data")
         return sheet
     except Exception as e:
-        st.error(f"something gone wrong")
+        st.error(f"Connection error: {e}")
+        return None
 
 db_sheet = connect_to_sheet()
 
@@ -41,13 +42,14 @@ if not st.session_state['logged_in']:
     menu = st.sidebar.radio("Login Required", ["Login Tab"])
 else:
     menu = st.sidebar.radio("Navigation", [
-        "Meetings", "Teams", "Planning vs Reality", 
+        "Meetings", "Teams", "Planning vs Reality",
         "Reports", "Notice Board", "Settings"
     ])
     if st.sidebar.button("Logout"):
         st.session_state['logged_in'] = False
         st.rerun()
 
+# --- 5. SAVE DATA FUNCTION ---
 def save_data(tab_name, data_list):
     if db_sheet:
         try:
@@ -55,18 +57,18 @@ def save_data(tab_name, data_list):
             worksheet.append_row(data_list)
             st.success("Data Google Sheet me save ho gaya!")
         except Exception as e:
-            st.error(f"Sheet '{tab_name}' nahi mili. Kripya Google Sheet me tab banayein.")
+            st.error(f"Sheet '{tab_name}' nahi mili. Kripya Google Sheet me tab banayein. Error: {e}")
     else:
-        st.error("Google Sheet connect nahi hai. Kripya key.json check karein.")
+        st.error("Google Sheet connect nahi hai. Kripya secrets.toml check karein.")
 
-# --- TABS LOGIC ---
+# --- 6. TABS LOGIC ---
 
 if menu == "Login Tab":
     st.title("Employee Login")
     emp_id = st.text_input("Employee ID")
     password = st.text_input("Password", type="password")
     if st.button("Login Now"):
-        if emp_id == "admin" and password == "1234":  
+        if emp_id == "admin" and password == "1234":
             st.session_state['logged_in'] = True
             st.rerun()
         else:
@@ -75,7 +77,7 @@ if menu == "Login Tab":
 elif menu == "Meetings":
     st.title("Meetings Portal")
     t1, t2, t3 = st.tabs(["Attendance", "Meeting Polls", "Final Decision"])
-    
+
     with t1:
         st.subheader("Meeting Attendance")
         date_val = st.date_input("Date")
@@ -83,7 +85,7 @@ elif menu == "Meetings":
         reason = st.text_area("Reason (If No)")
         if st.button("Submit Attendance"):
             save_data("Meeting_Attendance", [str(date_val), attending, reason])
-            
+
     with t2:
         st.subheader("Meeting Decision Form")
         m_name = st.text_input("Name")
@@ -93,14 +95,14 @@ elif menu == "Meetings":
         m_day = st.text_input("Day")
         m_time = st.time_input("Time")
         m_agenda = st.text_area("Agenda")
-        
+
         st.write("📊 **Voting Progress (Live Example)**")
         st.progress(70, text="Friday (70%)")
         st.progress(20, text="Sunday (20%)")
-        
+
         if st.button("Submit Meeting Info"):
             save_data("Meeting_Polls", [m_name, m_fname, m_place, str(m_date), m_day, str(m_time), m_agenda])
-            
+
     with t3:
         st.subheader("Decision Result")
         final_dec = st.text_area("Final Approved Decision")
@@ -110,9 +112,8 @@ elif menu == "Meetings":
 elif menu == "Teams":
     st.title("Teams Data Entry")
     team = st.selectbox("Select Team", ["Jury Team", "Task Team", "Monitoring Team", "Data Team"])
-    
     name = st.text_input("1. Name & Father's Name")
-    
+
     if team == "Jury Team":
         action = st.selectbox("2. Rule Action", ["Purpose a new rule", "Remove an old rule", "Amend a rule"])
         detail = st.text_area("3. Details of the rule")
@@ -120,7 +121,7 @@ elif menu == "Teams":
         need = st.text_area("5. Need of this rule")
         if st.button("Save Jury Data"):
             save_data("Jury_Team", [name, action, detail, reason, need])
-            
+
     elif team == "Task Team":
         task_type = st.selectbox("2. Task Type", ["Demand for something", "Voice against evil", "Social welfare", "Masjid and deen"])
         detail = st.text_area("3. Details of task")
@@ -128,7 +129,7 @@ elif menu == "Teams":
         achieve = st.text_area("5. Achievement")
         if st.button("Save Task Data"):
             save_data("Task_Team", [name, task_type, detail, challenges, achieve])
-            
+
     elif team == "Monitoring Team":
         action = st.selectbox("2. Action", ["Appraisal", "Complaint"])
         detail = st.text_area("3. Details")
@@ -136,7 +137,7 @@ elif menu == "Teams":
         remarks = st.text_area("5. Other remarks")
         if st.button("Save Monitoring Data"):
             save_data("Monitoring_Team", [name, action, detail, decision, remarks])
-            
+
     elif team == "Data Team":
         d_date = st.date_input("2. Date")
         m_num = st.text_input("3. Meeting number")
@@ -159,20 +160,23 @@ elif menu == "Planning vs Reality":
 elif menu == "Reports":
     st.title("Performance Reports")
     filter_type = st.radio("Select duration:", ["Last 15 Days", "Last 30 Days", "Up to 6 Months"])
-    
+
     if db_sheet:
         st.write("Fetching real data from Google Sheets...")
         try:
             task_sheet = db_sheet.worksheet("Task_Team").get_all_records()
             if len(task_sheet) > 0:
                 df = pd.DataFrame(task_sheet)
-                st.bar_chart(df['Task Type'].value_counts())
+                if 'Task Type' in df.columns:
+                    st.bar_chart(df['Task Type'].value_counts())
+                else:
+                    st.warning("'Task Type' column nahi mili sheet me.")
             else:
                 st.info("Sheet me abhi koi data nahi hai charts banane ke liye.")
-        except:
-            st.warning("Data load nahi ho paya. Tabs check karein.")
+        except Exception as e:
+            st.warning(f"Data load nahi ho paya. Error: {e}")
     else:
-        st.error("Google Sheet connect nahi hai. Data nahi dikh sakta.")
+        st.error("Google Sheet connect nahi hai.")
 
 elif menu == "Notice Board":
     st.title("Notice Board")
@@ -184,8 +188,23 @@ elif menu == "Notice Board":
 elif menu == "Settings":
     st.title("App Settings")
     st.write("Current User: Admin")
-    new_lang = st.radio("Choose App Language / भाषा चुनें", ["English", "Hindi"], index=0 if st.session_state['language']=="English" else 1)
+    new_lang = st.radio(
+        "Choose App Language / भाषा चुनें",
+        ["English", "Hindi"],
+        index=0 if st.session_state['language'] == "English" else 1
+    )
     if st.button("Apply Language"):
         st.session_state['language'] = new_lang
         st.success(f"Language set to {new_lang}.")
         st.rerun()
+```
+
+---
+
+## Folder structure jo honi chahiye
+```
+your_project/
+│
+├── app.py                  ← ye wala code
+└── .streamlit/
+    └── secrets.toml        ← TOML file jo pehle di thi
